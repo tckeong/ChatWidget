@@ -1,0 +1,137 @@
+//───────────────────────────────────────────────
+//  Prisma datasource & generator
+//───────────────────────────────────────────────
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+//───────────────────────────────────────────────
+//  Supporting enums
+//───────────────────────────────────────────────
+enum ConversationType   { 
+  DIRECT 
+  SUPPORT_ROOM 
+  COMMUNITY 
+}
+
+enum ParticipantRole    { 
+  CUSTOMER 
+  AGENT 
+  OWNER           
+}
+
+enum MessageContentType { 
+  TEXT  
+  FILE  
+  IMAGE  
+  VIDEO  
+  OTHER 
+}
+
+//───────────────────────────────────────────────
+//  Existing top-level tables (minimal stubs)
+//───────────────────────────────────────────────
+model User {
+  id           BigInt       @id @default(autoincrement())
+  /* … the rest of your User columns … */
+  participants Participant[]
+  messages     Message[]    @relation("MessageSender")
+}
+
+model Business {
+  id           BigInt       @id @default(autoincrement())
+  /* … the rest of your Business columns … */
+  conversations Conversation[]
+}
+
+//───────────────────────────────────────────────
+//  Chat schema proper
+//───────────────────────────────────────────────
+model Conversation {
+  id            BigInt          @id @default(autoincrement())
+  business      Business        @relation(fields: [businessId], references: [id])
+  businessId    BigInt
+  type          ConversationType
+  participants  Participant[]
+  messages      Message[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  /// *Composite index ensures fast infinite-scroll pagination*
+  @@index([id, createdAt])
+}
+
+model Participant {
+  id             BigInt          @id @default(autoincrement())
+  conversation   Conversation    @relation(fields: [conversationId], references: [id])
+  conversationId BigInt
+
+  user           User            @relation(fields: [userId], references: [id])
+  userId         BigInt
+
+  role           ParticipantRole
+  joinedAt       DateTime        @default(now())
+
+  /// *Prevents the same user from joining twice*
+  @@unique([conversationId, userId])
+}
+
+model Message {
+  id             BigInt          @id @default(autoincrement())
+  conversation   Conversation    @relation(fields: [conversationId], references: [id])
+  conversationId BigInt
+
+  sender         User?           @relation("MessageSender", fields: [senderId], references: [id])
+  senderId       BigInt?         // `null` for system / broadcast events
+
+  contentType    MessageContentType @default(TEXT)
+  body           String?          // TEXT messages
+  fileUrl        String?          // non-TEXT messages (files, images…)
+  mimeType       String?          // helps the front-end decide how to render
+
+  createdAt      DateTime         @default(now())
+  readAt         DateTime?
+  editedAt       DateTime?
+  deletedAt      DateTime?
+
+  attachments    Attachment[]     // optional rich-media table (see below)
+
+  /// *Optimised for chronological fetches & sender filtering*
+  @@index([conversationId, createdAt])
+  @@index([senderId,            createdAt])
+}
+
+model Attachment {
+  id          BigInt   @id @default(autoincrement())
+  message     Message  @relation(fields: [messageId], references: [id])
+  messageId   BigInt
+
+  url         String
+  mimeType    String
+  width       Int?
+  height      Int?
+  sizeBytes   Int?
+}
+
+/*
+╭────────────────────────────────────────────────────────
+│  OPTIONAL — “Like / reaction” table (easy extension)
+╰────────────────────────────────────────────────────────
+model Reaction {
+  message     Message  @relation(fields: [messageId], references: [id])
+  messageId   BigInt
+
+  user        User     @relation(fields: [userId], references: [id])
+  userId      BigInt
+
+  emoji       String   // 👍, ❤️, 😂 …
+
+  @@id([messageId, userId, emoji])  // composite PK avoids duplicates
+}
+*/
