@@ -1,7 +1,3 @@
-// src/services/messageService.ts
-// This file contains the typed service layer for message operations,
-// abstracting database interactions via Prisma[cite: 7].
-
 import {
     PrismaClient,
     Message,
@@ -9,22 +5,18 @@ import {
     MessageContentType,
 } from "@prisma/client";
 
-// Define the structure for creating a message.
 interface CreateMessageData {
     conversationId: bigint;
-    senderId?: bigint; // Optional for system messages
+    senderId?: bigint;
     body?: string;
     contentType?: MessageContentType;
     fileUrl?: string;
     mimeType?: string;
-    // attachments? Not handled directly in service for simplicity, but part of model
 }
 
-// Define the MessageService class to encapsulate database operations related to messages.
 export class MessageService {
     constructor(private prisma: PrismaClient) {}
 
-    // Creates a new message in the database.
     async createMessage(data: CreateMessageData): Promise<Message> {
         try {
             const newMessage = await this.prisma.message.create({

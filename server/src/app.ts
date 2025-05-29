@@ -1,5 +1,4 @@
-import { type FastifyInstance } from "fastify/types/instance";
-import { FastifyPluginOptions } from "fastify";
+import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyRedis from "@fastify/redis";
@@ -7,12 +6,10 @@ import fastifyJwt from "@fastify/jwt";
 import fastifyCookie from "@fastify/cookie";
 
 import chatPlugin from "./plugins/chat";
+import loginPlugin from "./plugins/login";
 
 import jwtValidate from "./plugins/jwtValidate";
 import { PrismaClient } from "@prisma/client";
-
-const path = require("node:path");
-const AutoLoad = require("@fastify/autoload");
 
 // Pass --options via CLI arguments in command to enable these options.
 const options = {};
@@ -61,15 +58,9 @@ module.exports = async function (
         secret: process.env.JWT_SECRET || "supersecretkey",
     });
     fastify.register(fastifyCookie);
+    fastify.register(loginPlugin);
     fastify.register(jwtValidate);
     fastify.register(chatPlugin);
-
-    // This loads all plugins defined in routes
-    // define your routes in one of these
-    fastify.register(AutoLoad, {
-        dir: path.join(__dirname, "routes"),
-        options: Object.assign({}, opts),
-    });
 };
 
 module.exports.options = options;

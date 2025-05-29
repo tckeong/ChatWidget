@@ -5,6 +5,7 @@
     "src/routes/**/*",
     "src/test/**/*",
     "src/services/**/*",
+    "prisma/seed.ts",
     "src/app.ts"
   ],
   "compilerOptions": {

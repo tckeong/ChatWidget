@@ -1,8 +1,14 @@
 import fp from "fastify-plugin";
 import { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
-import { ParticipantRole, MessageContentType } from "@prisma/client";
+import { MessageContentType } from "@prisma/client";
 import { MessageService } from "../services/messageService";
+import { ConversationService } from "../services/conversationService";
 import { User } from "../app";
+import { ConnectedClient } from "../services/websocketService";
+import {
+    WebSocketMessage,
+    WebSocketService,
+} from "../services/websocketService";
 
 declare module "fastify" {
     interface FastifyRequest {
@@ -14,28 +20,18 @@ interface Querystring {
     token?: string;
 }
 
-interface WebSocketMessage {
-    type: "online" | "offline" | "is_typing";
-    payload: {
-        conversationId?: string;
-        body?: string;
-        contentType?: MessageContentType;
-        [key: string]: any;
-    };
-}
-
-interface ConnectedClient {
-    socket: WebSocket;
-    user: User;
-    conversationId?: string;
-}
-
 async function chatPlugin(
     fastify: FastifyInstance,
     opts: FastifyPluginOptions
 ) {
-    const messageService = new MessageService(fastify.prisma);
     const connectedClients = new Map<string, ConnectedClient>();
+    const messageService = new MessageService(fastify.prisma);
+    const webSocketService = new WebSocketService(
+        connectedClients,
+        fastify,
+        messageService
+    );
+    const conversationService = new ConversationService(fastify.prisma);
 
     // CORS preflight setup
     fastify.options("/*", async (request, reply) => {
@@ -145,7 +141,6 @@ async function chatPlugin(
         });
     }
 
-    // REST endpoint for sending messages
     fastify.post("/messages", {
         preHandler: [fastify.rateLimit(), fastify.authenticate],
         handler: async (
@@ -158,10 +153,9 @@ async function chatPlugin(
             }>,
             reply
         ) => {
-            const authHeader = request.headers["authorization"];
-            const token = authHeader?.split(" ")[1];
+            const cookieToken = request.cookies.token;
 
-            if (!token) {
+            if (!cookieToken) {
                 return reply
                     .status(401)
                     .send({ message: "Authentication required" });
@@ -179,40 +173,23 @@ async function chatPlugin(
                     .status(401)
                     .send({ message: "User ID missing in token" });
             }
-
             const senderId = BigInt(userPayload.id);
             const { conversationId, body, contentType } = request.body;
 
+            await conversationService.createMessage({
+                conversationId: BigInt(conversationId),
+                senderId: senderId,
+                body: body,
+                contentType: contentType || MessageContentType.TEXT,
+            });
+
             try {
-                // Store message in PostgreSQL via Prisma
-                const newMessage = await messageService.createMessage({
-                    conversationId: BigInt(conversationId),
-                    senderId: senderId,
-                    body: body,
-                    contentType: contentType || MessageContentType.TEXT,
-                });
-
-                // Publish message to Redis for cross-node broadcast
-                await fastify.redis.publish(
-                    "chat-channel",
-                    JSON.stringify({
-                        type: "new_message",
-                        payload: {
-                            ...newMessage,
-                            conversationId: conversationId,
-                            sender: {
-                                id: senderId.toString(),
-                                username:
-                                    userPayload.username || `User ${senderId}`,
-                                role: userPayload.role || "CUSTOMER",
-                            },
-                        },
-                    })
-                );
-
                 reply.status(201).send({
                     message: "Message sent successfully",
-                    data: newMessage,
+                    data: {
+                        user: userPayload,
+                        body: body,
+                    },
                 });
             } catch (error) {
                 fastify.log.error("Error sending message via REST:", error);
@@ -221,34 +198,29 @@ async function chatPlugin(
         },
     });
 
-    // GET endpoint to retrieve conversation messages
-    fastify.get("/conversations/:conversationId/messages", {
+    fastify.get("/conversations/:userId/:businessId", {
         preHandler: [fastify.authenticate],
         handler: async (
             request: FastifyRequest<{
-                Params: { conversationId: string };
-                Querystring: { limit?: string; offset?: string };
+                Params: { userId: string; businessId: string };
             }>,
             reply
         ) => {
-            const { conversationId } = request.params;
-            const limit = parseInt(request.query.limit || "50");
-            const offset = parseInt(request.query.offset || "0");
+            const { userId, businessId } = request.params;
 
             try {
+                const conversations =
+                    await conversationService.getConversationsById(
+                        BigInt(userId),
+                        BigInt(businessId)
+                    );
+
                 const messages = await messageService.getMessagesByConversation(
-                    BigInt(conversationId),
-                    limit,
-                    offset
+                    BigInt(conversations[1].id)
                 );
 
                 reply.send({
                     data: messages,
-                    pagination: {
-                        limit,
-                        offset,
-                        hasMore: messages.length === limit,
-                    },
                 });
             } catch (error) {
                 fastify.log.error("Error retrieving messages:", error);
@@ -259,7 +231,6 @@ async function chatPlugin(
         },
     });
 
-    // WebSocket endpoint for real-time communication
     fastify.get<{ Querystring: Querystring }>(
         "/ws",
         {
@@ -280,7 +251,6 @@ async function chatPlugin(
                 `WebSocket client connected: ${user.username} (${clientId})`
             );
 
-            // Send welcome message
             socket.send(
                 JSON.stringify({
                     type: "connection_established",
@@ -291,7 +261,6 @@ async function chatPlugin(
                 })
             );
 
-            // Handle incoming WebSocket messages
             socket.on("message", async (rawMessage: Buffer) => {
                 try {
                     const messageStr = rawMessage.toString();
@@ -315,6 +284,12 @@ async function chatPlugin(
                                 wsMessage.payload.conversationId!,
                                 true
                             );
+                            break;
+
+                        case "send_message":
+                            break;
+
+                        case "is_read":
                             break;
 
                         default:
@@ -341,7 +316,6 @@ async function chatPlugin(
                 }
             });
 
-            // Handle WebSocket connection close
             socket.on("close", () => {
                 fastify.log.info(
                     `WebSocket client disconnected: ${user.username} (${clientId})`
@@ -349,7 +323,6 @@ async function chatPlugin(
                 connectedClients.delete(clientId);
             });
 
-            // Handle WebSocket errors
             socket.on("error", (error: Error) => {
                 fastify.log.error(
                     `WebSocket error for client ${clientId}:`,
@@ -358,7 +331,6 @@ async function chatPlugin(
                 connectedClients.delete(clientId);
             });
 
-            // WebSocket message handlers
             async function handleJoinConversation(
                 clientId: string,
                 conversationId: string
