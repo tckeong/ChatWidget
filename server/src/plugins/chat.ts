@@ -1,7 +1,6 @@
 import fp from "fastify-plugin";
 import { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
 import { MessageContentType } from "@prisma/client";
-import { MessageService } from "../services/messageService";
 import { ConversationService } from "../services/conversationService";
 import { User } from "../app";
 import { ConnectedClient } from "../services/websocketService";
@@ -25,12 +24,7 @@ async function chatPlugin(
     opts: FastifyPluginOptions
 ) {
     const connectedClients = new Map<string, ConnectedClient>();
-    const messageService = new MessageService(fastify.prisma);
-    const webSocketService = new WebSocketService(
-        connectedClients,
-        fastify,
-        messageService
-    );
+    const webSocketService = new WebSocketService(connectedClients, fastify);
     const conversationService = new ConversationService(fastify.prisma);
 
     // CORS preflight setup
@@ -56,7 +50,6 @@ async function chatPlugin(
         done();
     });
 
-    // Subscribe to Redis for cross-node message broadcasting
     fastify.redis.subscribe("chat-channel", (err) => {
         if (err) {
             fastify.log.error(
@@ -68,7 +61,6 @@ async function chatPlugin(
         }
     });
 
-    // Handle Redis messages and broadcast to WebSocket clients
     fastify.redis.on("message", (channel: string, message: string) => {
         if (channel === "chat-channel") {
             try {
@@ -83,7 +75,6 @@ async function chatPlugin(
         }
     });
 
-    // Helper function to broadcast messages to all clients in a conversation
     function broadcastToConversation(conversationId: string, data: any) {
         connectedClients.forEach((client, clientId) => {
             if (
@@ -98,43 +89,6 @@ async function chatPlugin(
                         error
                     );
                     // Remove disconnected client
-                    connectedClients.delete(clientId);
-                }
-            }
-        });
-    }
-
-    // Helper function to broadcast typing indicators
-    function broadcastTypingIndicator(
-        conversationId: string,
-        user: User,
-        isTyping: boolean
-    ) {
-        const typingData = {
-            type: isTyping ? "user_typing" : "user_stopped_typing",
-            payload: {
-                conversationId,
-                user: {
-                    id: user.id,
-                    username: user.username,
-                    role: user.role,
-                },
-            },
-        };
-
-        connectedClients.forEach((client, clientId) => {
-            if (
-                client.conversationId === conversationId &&
-                client.user.id !== user.id &&
-                client.socket.readyState === 1
-            ) {
-                try {
-                    client.socket.send(JSON.stringify(typingData));
-                } catch (error) {
-                    fastify.log.error(
-                        `Error sending typing indicator to client ${clientId}:`,
-                        error
-                    );
                     connectedClients.delete(clientId);
                 }
             }
@@ -176,12 +130,20 @@ async function chatPlugin(
             const senderId = BigInt(userPayload.id);
             const { conversationId, body, contentType } = request.body;
 
-            await conversationService.createMessage({
+            const newMessage = await conversationService.createMessage({
                 conversationId: BigInt(conversationId),
                 senderId: senderId,
                 body: body,
                 contentType: contentType || MessageContentType.TEXT,
             });
+
+            await fastify.redis.publish(
+                "chat-channel",
+                JSON.stringify({
+                    type: "new_message",
+                    payload: newMessage,
+                })
+            );
 
             try {
                 reply.status(201).send({
@@ -215,7 +177,7 @@ async function chatPlugin(
                         BigInt(businessId)
                     );
 
-                const messages = await messageService.getMessagesByConversation(
+                const messages = await conversationService.getMessageHistory(
                     BigInt(conversations[1].id)
                 );
 
@@ -268,28 +230,44 @@ async function chatPlugin(
 
                     switch (wsMessage.type) {
                         case "online":
-                            await handleJoinConversation(
+                            await webSocketService.handleOnline(
                                 clientId,
                                 wsMessage.payload.conversationId!
                             );
                             break;
 
                         case "offline":
-                            await handleLeaveConversation(clientId);
+                            await webSocketService.handleOffline(clientId);
                             break;
 
                         case "is_typing":
-                            await handleTypingIndicator(
+                            await webSocketService.handleTyping(
                                 clientId,
-                                wsMessage.payload.conversationId!,
-                                true
+                                wsMessage.payload.conversationId!
                             );
                             break;
 
                         case "send_message":
+                            await webSocketService.handleSendMessage(
+                                clientId,
+                                wsMessage.payload.conversationId!
+                            );
                             break;
 
                         case "is_read":
+                            await webSocketService.handleIsRead(
+                                clientId,
+                                wsMessage.payload.conversationId!,
+                                wsMessage.payload.messageIds!
+                            );
+
+                            conversationService.markMessagesAsRead(
+                                wsMessage.payload.messageIds!.map((id) =>
+                                    BigInt(id)
+                                ),
+                                BigInt(wsMessage.payload.conversationId!),
+                                BigInt(user.id)
+                            );
                             break;
 
                         default:
@@ -330,151 +308,6 @@ async function chatPlugin(
                 );
                 connectedClients.delete(clientId);
             });
-
-            async function handleJoinConversation(
-                clientId: string,
-                conversationId: string
-            ) {
-                const client = connectedClients.get(clientId);
-                if (!client) return;
-
-                client.conversationId = conversationId;
-
-                client.socket.send(
-                    JSON.stringify({
-                        type: "joined_conversation",
-                        payload: {
-                            conversationId,
-                            message: `Joined conversation ${conversationId}`,
-                        },
-                    })
-                );
-
-                // Notify other users in the conversation
-                broadcastToConversation(conversationId, {
-                    type: "user_joined",
-                    payload: {
-                        conversationId,
-                        user: {
-                            id: client.user.id,
-                            username: client.user.username,
-                            role: client.user.role,
-                        },
-                    },
-                });
-            }
-
-            async function handleLeaveConversation(clientId: string) {
-                const client = connectedClients.get(clientId);
-                if (!client || !client.conversationId) return;
-
-                const conversationId = client.conversationId;
-
-                // Notify other users in the conversation
-                broadcastToConversation(conversationId, {
-                    type: "user_left",
-                    payload: {
-                        conversationId,
-                        user: {
-                            id: client.user.id,
-                            username: client.user.username,
-                            role: client.user.role,
-                        },
-                    },
-                });
-
-                client.conversationId = undefined;
-
-                client.socket.send(
-                    JSON.stringify({
-                        type: "left_conversation",
-                        payload: {
-                            conversationId,
-                            message: `Left conversation ${conversationId}`,
-                        },
-                    })
-                );
-            }
-
-            async function handleSendMessage(clientId: string, payload: any) {
-                const client = connectedClients.get(clientId);
-                if (!client || !client.conversationId) {
-                    client?.socket.send(
-                        JSON.stringify({
-                            type: "error",
-                            payload: {
-                                message: "Must join a conversation first",
-                            },
-                        })
-                    );
-                    return;
-                }
-
-                const { body, contentType } = payload;
-                const senderId = BigInt(client.user.id);
-
-                try {
-                    // Store message in database
-                    const newMessage = await messageService.createMessage({
-                        conversationId: BigInt(client.conversationId),
-                        senderId: senderId,
-                        body: body,
-                        contentType: contentType || MessageContentType.TEXT,
-                    });
-
-                    // Publish to Redis for cross-node broadcast
-                    await fastify.redis.publish(
-                        "chat-channel",
-                        JSON.stringify({
-                            type: "new_message",
-                            payload: {
-                                ...newMessage,
-                                conversationId: client.conversationId,
-                                sender: {
-                                    id: senderId.toString(),
-                                    username:
-                                        client.user.username ||
-                                        `User ${senderId}`,
-                                    role: client.user.role || "CUSTOMER",
-                                },
-                            },
-                        })
-                    );
-
-                    // Send confirmation to sender
-                    client.socket.send(
-                        JSON.stringify({
-                            type: "message_sent",
-                            payload: {
-                                messageId: newMessage.id.toString(),
-                                conversationId: client.conversationId,
-                            },
-                        })
-                    );
-                } catch (error) {
-                    fastify.log.error(
-                        "Error sending message via WebSocket:",
-                        error
-                    );
-                    client.socket.send(
-                        JSON.stringify({
-                            type: "error",
-                            payload: { message: "Failed to send message" },
-                        })
-                    );
-                }
-            }
-
-            async function handleTypingIndicator(
-                clientId: string,
-                conversationId: string,
-                isTyping: boolean
-            ) {
-                const client = connectedClients.get(clientId);
-                if (!client || client.conversationId !== conversationId) return;
-
-                broadcastTypingIndicator(conversationId, client.user, isTyping);
-            }
         }
     );
 }

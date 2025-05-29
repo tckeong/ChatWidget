@@ -1,7 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { User } from "../app";
 import { MessageContentType } from "@prisma/client";
-import { MessageService } from "./messageService";
 
 export interface ConnectedClient {
     socket: WebSocket;
@@ -13,17 +12,15 @@ export interface WebSocketMessage {
     type: "online" | "offline" | "is_typing" | "send_message" | "is_read";
     payload: {
         conversationId?: string;
-        body?: string;
-        contentType?: MessageContentType;
-        messageId?: string[];
+        senderId?: string;
+        messageIds?: string[];
     };
 }
 
 export class WebSocketService {
     constructor(
         private connectedClients: Map<string, ConnectedClient>,
-        private readonly fastify: FastifyInstance,
-        private readonly messageService: MessageService
+        private readonly fastify: FastifyInstance
     ) {}
 
     broadcastToConversation(conversationId: string, data: any) {
@@ -52,25 +49,10 @@ export class WebSocketService {
 
         client.conversationId = conversationId;
 
-        client.socket.send(
-            JSON.stringify({
-                type: "joined_conversation",
-                payload: {
-                    conversationId,
-                    message: `Joined conversation ${conversationId}`,
-                },
-            })
-        );
-
         this.broadcastToConversation(conversationId, {
-            type: "user_joined",
+            type: "online",
             payload: {
-                conversationId,
-                user: {
-                    id: client.user.id,
-                    username: client.user.username,
-                    role: client.user.role,
-                },
+                user: client.user,
             },
         });
     }
@@ -82,93 +64,55 @@ export class WebSocketService {
         const conversationId = client.conversationId;
 
         this.broadcastToConversation(conversationId, {
-            type: "user_left",
+            type: "left",
             payload: {
-                conversationId,
-                user: {
-                    id: client.user.id,
-                    username: client.user.username,
-                    role: client.user.role,
-                },
+                user: client.user,
             },
         });
 
-        client.conversationId = undefined;
-
-        client.socket.send(
-            JSON.stringify({
-                type: "left_conversation",
-                payload: {
-                    conversationId,
-                    message: `Left conversation ${conversationId}`,
-                },
-            })
-        );
+        client.socket.close();
+        this.connectedClients.delete(clientId);
     }
 
-    async handleSendMessage(clientId: string, payload: any) {
+    async handleTyping(clientId: string, conversationId: string) {
         const client = this.connectedClients.get(clientId);
-        if (!client || !client.conversationId) {
-            client?.socket.send(
-                JSON.stringify({
-                    type: "error",
-                    payload: {
-                        message: "Must join a conversation first",
-                    },
-                })
-            );
-            return;
-        }
+        if (!client || !client.conversationId) return;
 
-        const { body, contentType } = payload;
-        const senderId = BigInt(client.user.id);
+        this.broadcastToConversation(conversationId, {
+            type: "typing",
+            payload: {
+                conversationId,
+                user: client.user,
+            },
+        });
+    }
 
-        try {
-            // Store message in database
-            const newMessage = await this.messageService.createMessage({
-                conversationId: BigInt(client.conversationId),
-                senderId: senderId,
-                body: body,
-                contentType: contentType || MessageContentType.TEXT,
-            });
+    async handleSendMessage(clientId: string, conversationId: string) {
+        const client = this.connectedClients.get(clientId);
+        if (!client || !client.conversationId) return;
 
-            await this.fastify.redis.publish(
-                "chat-channel",
-                JSON.stringify({
-                    type: "new_message",
-                    payload: {
-                        ...newMessage,
-                        conversationId: client.conversationId,
-                        sender: {
-                            id: senderId.toString(),
-                            username:
-                                client.user.username || `User ${senderId}`,
-                            role: client.user.role || "CUSTOMER",
-                        },
-                    },
-                })
-            );
+        this.broadcastToConversation(conversationId, {
+            type: "sent",
+            payload: {
+                user: client.user,
+            },
+        });
+    }
 
-            client.socket.send(
-                JSON.stringify({
-                    type: "message_sent",
-                    payload: {
-                        messageId: newMessage.id.toString(),
-                        conversationId: client.conversationId,
-                    },
-                })
-            );
-        } catch (error) {
-            this.fastify.log.error(
-                "Error sending message via WebSocket:",
-                error
-            );
-            client.socket.send(
-                JSON.stringify({
-                    type: "error",
-                    payload: { message: "Failed to send message" },
-                })
-            );
-        }
+    async handleIsRead(
+        clientId: string,
+        conversationId: string,
+        messageId: string[]
+    ) {
+        const client = this.connectedClients.get(clientId);
+        if (!client || !client.conversationId) return;
+
+        this.broadcastToConversation(conversationId, {
+            type: "read",
+            payload: {
+                user: client.user,
+                messageIds: messageId,
+            },
+        });
     }
 }
