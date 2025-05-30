@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Paperclip, Send, Check, CheckCheck } from 'lucide-react';
+import Cookies from 'js-cookie';
 
 type RoleType = 'customer' | 'agent';
 
@@ -13,64 +14,159 @@ interface Participant {
     online?: boolean;
 }
 
+type MessageContentType = 'TEXT' | 'IMAGE' | 'VIDEO' | 'FILE' | 'OTHERS';
 interface Message {
-    id: number;
-    text: string;
-    time: string;
-    sent: boolean; // true if sent by the user, false if received
-    read: boolean;
+    id?: bigint;
+    conversationId: bigint;
+    senderId: bigint;
+    body?: string;
+    contentType?: MessageContentType;
+    fileUrl?: string;
+    mimeType?: string;
+    attachments?: attachment[];
+    createdAt?: Date;
+    readAt?: Date;
 }
+
+interface attachment {
+    url: string;
+    mimeType: string;
+    width?: number;
+    height?: number;
+    sizeBytes?: number;
+}
+
+interface WebSocketMessage {
+    type:
+    | "online"
+    | "offline"
+    | "is_typing"
+    | "send_message"
+    | "is_read";
+    payload: {
+        conversationId?: string;
+        senderId?: string;
+        messageIds?: string[];
+        token?: string;
+    };
+}
+
 
 const initialMessages: Message[] = [
     {
-        id: 1,
-        text: "Hey! How's your day going?",
-        time: "2:30 PM",
-        sent: false,
-        read: false
+        id: BigInt(1),
+        conversationId: BigInt(1),
+        senderId: BigInt(1),
+        body: "Hey! How's your day going?",
+        contentType: "TEXT",
+        attachments: []
     },
     {
-        id: 2,
-        text: "Pretty good! Just finished the presentation. How about you?",
-        time: "2:32 PM",
-        sent: true,
-        read: true
+        id: BigInt(2),
+        conversationId: BigInt(1),
+        senderId: BigInt(2),
+        body: "Pretty good! Just finished the presentation. How about you?",
+        contentType: "TEXT",
+        attachments: []
     },
     {
-        id: 3,
-        text: "That's great! I'm working on the new project proposal",
-        time: "2:33 PM",
-        sent: false,
-        read: false
+        id: BigInt(3),
+        conversationId: BigInt(1),
+        senderId: BigInt(1),
+        body: "That's great! I'm working on the new project proposal",
+        contentType: "TEXT",
+        attachments: []
     },
     {
-        id: 4,
-        text: "Sounds interesting! Would love to hear more about it when you're ready",
-        time: "2:35 PM",
-        sent: true,
-        read: true
+        id: BigInt(4),
+        conversationId: BigInt(1),
+        senderId: BigInt(2),
+        body: "Sounds interesting! Would love to hear more about it when you're ready",
+        contentType: "TEXT",
+        attachments: []
     },
     {
-        id: 5,
-        text: "Are we still meeting tomorrow at 3 PM?",
-        time: "2:45 PM",
-        sent: false,
-        read: false
+        id: BigInt(5),
+        conversationId: BigInt(1),
+        senderId: BigInt(1),
+        body: "Are we still meeting tomorrow at 3 PM?",
+        contentType: "TEXT",
+        attachments: []
     },
     {
-        id: 6,
-        text: "Yes, absolutely! See you at 3 PM sharp.",
-        time: "2:46 PM",
-        sent: true,
-        read: false
+        id: BigInt(6),
+        conversationId: BigInt(1),
+        senderId: BigInt(2),
+        body: "Yes, absolutely! See you at 3 PM sharp.",
+        contentType: "TEXT",
+        attachments: []
     }
 ];
-
 
 const ChatWidget = () => {
     const [selectedFriend, setSelectedFriend] = useState<Participant | null>(null);
     const [messages, setMessages] = useState<Message[]>(initialMessages);
     const [messageInput, setMessageInput] = useState('');
+    const [user, setUser] = useState<{ id: number; name: string } | null>(null);
+    const wsRef = useRef<WebSocket | null>(null);
+
+    useEffect(() => {
+        fetch(`${import.meta.env.VITE_API_URL}/conversations/1/1`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${Cookies.get('token')}`
+            }
+        }).then((response) => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        }).then((data) => {
+            console.log(data);
+            setUser(data.user);
+        }).catch((error) => {
+            console.error('Error fetching user data:', error);
+        });
+    }, []);
+
+    useEffect(() => {
+        if (wsRef.current) {
+            return;
+        }
+
+        const token = Cookies.get('token');
+        wsRef.current = new WebSocket(`${import.meta.env.VITE_WS_URL}?token=${token}`);
+
+        wsRef.current.onopen = () => {
+            console.log('WebSocket connection established');
+            wsRef.current?.send(JSON.stringify({
+                type: 'online',
+                payload: {
+                    conversationId: '1',
+                    senderId: user?.id.toString() || '1',
+                }
+            } as WebSocketMessage));
+        };
+
+        wsRef.current.onmessage = (event) => {
+            const messageData = JSON.parse(event.data);
+            console.log('Received message:', messageData);
+        };
+
+        wsRef.current.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+
+        wsRef.current.onclose = (event) => {
+            console.log('WebSocket connection closed:', event);
+        };
+
+        return () => {
+            wsRef.current?.close();
+            wsRef.current = null;
+        };
+    }, []);
 
     useEffect(() => {
         const participant = {
@@ -107,11 +203,11 @@ const ChatWidget = () => {
 
         // Simulate sending a message
         const newMessage: Message = {
-            id: messages.length + 1,
-            text: messageInput,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            sent: true,
-            read: false, // Initially not read
+            conversationId: BigInt(1),
+            senderId: BigInt(1),
+            body: messageInput,
+            contentType: "TEXT",
+            attachments: []
         };
 
         setMessages([...messages, newMessage]);
@@ -128,7 +224,7 @@ const ChatWidget = () => {
                             <div className="flex items-center">
                                 <div className="ml-5 relative">
                                     <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
-                                        {selectedFriend.name.charAt(0).toUpperCase()}
+                                        {(user?.name || "John").charAt(0).toUpperCase()}
                                     </div>
                                     {selectedFriend.online
                                         ? (<div className="absolute bottom-0 -right-1 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></div>)
@@ -137,7 +233,7 @@ const ChatWidget = () => {
                                 </div>
                                 <div className="ml-3">
                                     <h2 className="text-lg font-semibold text-gray-900">
-                                        {selectedFriend.name}
+                                        {user?.name}
                                     </h2>
                                     <p className="text-sm text-gray-500">
                                         {selectedFriend.online ? 'online' : 'offline'}
@@ -151,24 +247,24 @@ const ChatWidget = () => {
                             {messages.map((message) => (
                                 <div
                                     key={message.id}
-                                    className={`flex ${message.sent ? 'justify-end' : 'justify-start'}`}
+                                    className={`flex ${message.senderId === BigInt(user?.id || -1) ? 'justify-end' : 'justify-start'}`}
                                 >
                                     <div
-                                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${message.sent
+                                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${message.senderId === BigInt(user?.id || -1)
                                             ? 'bg-blue-500 text-white border border-blue-900'
                                             : 'bg-white text-gray-900 border border-black'
                                             }`}
                                     >
-                                        <p className="text-sm">{message.text}</p>
+                                        <p className="text-sm">{message.body}</p>
                                         <div className="flex items-center justify-end mt-1">
                                             <p
-                                                className={`text-xs ${message.sent ? 'text-blue-100' : 'text-gray-500'
+                                                className={`text-xs ${message.senderId === BigInt(user?.id || -1) ? 'text-blue-100' : 'text-gray-500'
                                                     }`}
                                             >
-                                                {message.time}
+                                                {message.createdAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                             </p>
-                                            {message.sent && (
-                                                <ReadTicks read={message.read} />
+                                            {message.senderId == BigInt(user?.id || -1) && (
+                                                <ReadTicks read={message.readAt ? message.readAt < new Date() : false} />
                                             )}
                                         </div>
                                     </div>

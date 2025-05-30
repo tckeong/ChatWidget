@@ -4,7 +4,7 @@ import {
 } from "react-router";
 
 import Index from "./pages/Index";
-import LoginPage from "./pages/Login";
+import LoginWidget from "./widgets/Login";
 import ChatPage from "./pages/Chat";
 
 const router = createBrowserRouter([
@@ -13,11 +13,11 @@ const router = createBrowserRouter([
     element: <Index />,
   },
   {
-    path: "/login",
-    element: <LoginPage />,
+    path: "/login/:userId/:username/:businessId",
+    element: <LoginWidget />,
   },
   {
-    path: "/chat",
+    path: "/chat/:businessId/",
     element: <ChatPage />,
   },
   {
