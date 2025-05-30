@@ -16,14 +16,12 @@ const options = {};
 
 export interface User {
     id: string;
-    username: string;
-    role: string;
+    name: string;
 }
 
 declare module "@fastify/jwt" {
     interface FastifyJWT {
-        payload: { id: string; username: string; role: string };
-        user: User;
+        payload: User;
     }
 }
 
@@ -42,9 +40,16 @@ module.exports = async function (
     // Place here your custom code!
     fastify.decorate("prisma", prisma);
 
-    fastify.register(fastifyRedis, {
-        url: process.env.REDIS_URL || "redis://localhost:6379",
-    });
+    fastify
+        .register(fastifyRedis, {
+            url: process.env.REDIS_URL || "redis://localhost:6379",
+            namespace: "subscriber",
+        })
+        .register(fastifyRedis, {
+            url: process.env.REDIS_URL || "redis://localhost:6379",
+            namespace: "publisher",
+        });
+
     fastify.register(fastifyWebsocket, {
         options: {
             clientTracking: true,
@@ -60,7 +65,13 @@ module.exports = async function (
     fastify.register(fastifyCookie);
     fastify.register(loginPlugin);
     fastify.register(jwtValidate);
-    fastify.register(chatPlugin);
+    fastify.register(chatPlugin, { prefix: "/chat" });
+
+    fastify.ready((err) => {
+        if (err) throw err;
+        console.log(fastify.printRoutes());
+        console.log(fastify.printPlugins());
+    });
 };
 
 module.exports.options = options;

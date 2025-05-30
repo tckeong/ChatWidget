@@ -1,6 +1,5 @@
 import {
     PrismaClient,
-    ConversationType,
     ParticipantRole,
     MessageContentType,
     Prisma,
@@ -209,7 +208,6 @@ export class ConversationService {
                     sender: {
                         select: {
                             id: true,
-                            // Add other user fields you need
                         },
                     },
                 },
@@ -217,6 +215,10 @@ export class ConversationService {
                     createdAt: "asc", // Changed to ascending to get chronological order
                 },
             });
+
+            console.log(
+                `Retrieved ${messages.length} messages for conversation ${conversationId}`
+            );
 
             return {
                 messages,

@@ -14,6 +14,7 @@ export interface WebSocketMessage {
         conversationId?: string;
         senderId?: string;
         messageIds?: string[];
+        token?: string;
     };
 }
 

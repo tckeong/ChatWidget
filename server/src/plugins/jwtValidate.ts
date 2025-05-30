@@ -6,6 +6,7 @@ import {
     FastifyReply,
 } from "fastify";
 import { User } from "../app";
+import fastifyJwt from "@fastify/jwt";
 
 declare module "fastify" {
     interface FastifyInstance {
@@ -27,6 +28,7 @@ async function jwtAuthenticatePlugin(
                 const decoded = await request.jwtVerify();
                 request.user = decoded as User;
             } catch (err) {
+                console.log("hello");
                 reply.send(err);
             }
         }

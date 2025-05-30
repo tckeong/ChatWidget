@@ -50,7 +50,7 @@ async function chatPlugin(
         done();
     });
 
-    fastify.redis.subscribe("chat-channel", (err) => {
+    fastify.redis["subscriber"].subscribe("chat-channel", (err) => {
         if (err) {
             fastify.log.error(
                 "Failed to subscribe to Redis chat channel:",
@@ -61,19 +61,22 @@ async function chatPlugin(
         }
     });
 
-    fastify.redis.on("message", (channel: string, message: string) => {
-        if (channel === "chat-channel") {
-            try {
-                const data = JSON.parse(message);
-                broadcastToConversation(
-                    data.payload.conversationId?.toString(),
-                    data
-                );
-            } catch (error) {
-                fastify.log.error("Error parsing Redis message:", error);
+    fastify.redis["subscriber"].on(
+        "message",
+        (channel: string, message: string) => {
+            if (channel === "chat-channel") {
+                try {
+                    const data = JSON.parse(message);
+                    broadcastToConversation(
+                        data.payload.conversationId?.toString(),
+                        data
+                    );
+                } catch (error) {
+                    fastify.log.error("Error parsing Redis message:", error);
+                }
             }
         }
-    });
+    );
 
     function broadcastToConversation(conversationId: string, data: any) {
         connectedClients.forEach((client, clientId) => {
@@ -107,14 +110,6 @@ async function chatPlugin(
             }>,
             reply
         ) => {
-            const cookieToken = request.cookies.token;
-
-            if (!cookieToken) {
-                return reply
-                    .status(401)
-                    .send({ message: "Authentication required" });
-            }
-
             const userPayload = request.user;
             if (!userPayload || typeof userPayload === "string") {
                 return reply
@@ -137,14 +132,20 @@ async function chatPlugin(
                 contentType: contentType || MessageContentType.TEXT,
             });
 
-            await fastify.redis.publish(
+            await fastify.redis["publisher"].publish(
                 "chat-channel",
-                JSON.stringify({
-                    type: "new_message",
-                    payload: newMessage,
-                })
+                JSON.stringify(
+                    {
+                        type: "new_message",
+                        payload: newMessage,
+                    },
+                    (key, value) => {
+                        return typeof value === "bigint"
+                            ? value.toString()
+                            : value;
+                    }
+                )
             );
-
             try {
                 reply.status(201).send({
                     message: "Message sent successfully",
@@ -178,12 +179,23 @@ async function chatPlugin(
                     );
 
                 const messages = await conversationService.getMessageHistory(
-                    BigInt(conversations[1].id)
+                    BigInt(conversations[0].id)
                 );
 
-                reply.send({
-                    data: messages,
-                });
+                reply.send(
+                    JSON.stringify(
+                        {
+                            user: request.user,
+                            conversations: conversations,
+                            messages: messages,
+                        },
+                        (key, value) => {
+                            return typeof value === "bigint"
+                                ? value.toString()
+                                : value;
+                        }
+                    )
+                );
             } catch (error) {
                 fastify.log.error("Error retrieving messages:", error);
                 reply
@@ -197,10 +209,9 @@ async function chatPlugin(
         "/ws",
         {
             websocket: true,
-            preHandler: fastify.authenticate,
         },
         (socket, request) => {
-            const user = request.user;
+            const user = fastify.jwt.decode(request.query.token || "") as User;
             const clientId = `${user.id}_${Date.now()}_${Math.random()}`;
 
             // Store the connection
@@ -210,14 +221,14 @@ async function chatPlugin(
             });
 
             fastify.log.info(
-                `WebSocket client connected: ${user.username} (${clientId})`
+                `WebSocket client connected: ${user.name} (${clientId})`
             );
 
             socket.send(
                 JSON.stringify({
                     type: "connection_established",
                     payload: {
-                        message: `Hello, ${user.username}! WebSocket connection established.`,
+                        message: `Hello, ${user.name}! WebSocket connection established.`,
                         clientId: clientId,
                     },
                 })
@@ -296,7 +307,7 @@ async function chatPlugin(
 
             socket.on("close", () => {
                 fastify.log.info(
-                    `WebSocket client disconnected: ${user.username} (${clientId})`
+                    `WebSocket client disconnected: ${user.name} (${clientId})`
                 );
                 connectedClients.delete(clientId);
             });

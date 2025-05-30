@@ -12,6 +12,7 @@ async function main() {
 
     // Clear existing data (optional - comment out if you want to preserve existing data)
     console.log("🧹 Cleaning existing data...");
+
     await prisma.attachment.deleteMany({});
     await prisma.message.deleteMany({});
     await prisma.participant.deleteMany({});
@@ -21,51 +22,38 @@ async function main() {
 
     // Create 2 Businesses
     console.log("🏢 Creating businesses...");
-    const business1 = await prisma.business.create({
+    const business = await prisma.business.create({
         data: {
             id: 1n,
-        },
-    });
-
-    const business2 = await prisma.business.create({
-        data: {
-            id: 2n,
         },
     });
 
     // Create Users
     console.log("👥 Creating users...");
 
-    // Customer user
-    const customerUser = await prisma.user.create({
+    // Agent user
+    const agentUser = await prisma.user.create({
         data: {
             id: 1n,
         },
     });
 
-    // Agent user
-    const agentUser = await prisma.user.create({
+    // Customer user
+    const customerUser = await prisma.user.create({
         data: {
             id: 2n,
         },
     });
 
-    // Owner user (for demo purposes)
-    const ownerUser = await prisma.user.create({
-        data: {
-            id: 3n,
-        },
-    });
-
-    // Create a demo conversation
-    console.log("💬 Creating demo conversation...");
-    const demoConversation = await prisma.conversation.create({
+    // Create a demo DIRECT conversation
+    console.log("💬 Creating demo direct conversation...");
+    const directConversation = await prisma.conversation.create({
         data: {
             id: 1n,
-            businessId: business1.id,
-            type: ConversationType.SUPPORT_ROOM,
+            businessId: business.id,
+            type: ConversationType.DIRECT,
             createdAt: new Date("2024-03-15T10:00:00Z"),
-            updatedAt: new Date("2024-03-15T14:30:00Z"),
+            updatedAt: new Date("2024-03-15T10:30:00Z"),
         },
     });
 
@@ -75,7 +63,7 @@ async function main() {
     // Customer participant
     await prisma.participant.create({
         data: {
-            conversationId: demoConversation.id,
+            conversationId: directConversation.id,
             userId: customerUser.id,
             role: ParticipantRole.CUSTOMER,
             joinedAt: new Date("2024-03-15T10:00:00Z"),
@@ -85,268 +73,115 @@ async function main() {
     // Agent participant
     await prisma.participant.create({
         data: {
-            conversationId: demoConversation.id,
+            conversationId: directConversation.id,
             userId: agentUser.id,
             role: ParticipantRole.AGENT,
-            joinedAt: new Date("2024-03-15T10:05:00Z"),
+            joinedAt: new Date("2024-03-15T10:02:00Z"),
         },
     });
 
-    // Owner participant
-    await prisma.participant.create({
-        data: {
-            conversationId: demoConversation.id,
-            userId: ownerUser.id,
-            role: ParticipantRole.OWNER,
-            joinedAt: new Date("2024-03-15T11:30:00Z"),
-        },
-    });
-
-    // Create demo messages
+    // Create demo messages for direct conversation
     console.log("💬 Creating demo messages...");
 
     // Customer's initial message
-    const message1 = await prisma.message.create({
+    await prisma.message.create({
         data: {
-            conversationId: demoConversation.id,
+            conversationId: directConversation.id,
             senderId: customerUser.id,
             contentType: MessageContentType.TEXT,
-            body: "Hi! I'm having trouble with my recent order. The software installation keeps failing with error code 500.",
+            body: "Hey! I noticed you were online. Could you help me with a quick question about my recent order?",
             createdAt: new Date("2024-03-15T10:00:00Z"),
         },
     });
 
     // Agent's response
-    const message2 = await prisma.message.create({
+    await prisma.message.create({
         data: {
-            conversationId: demoConversation.id,
+            conversationId: directConversation.id,
             senderId: agentUser.id,
             contentType: MessageContentType.TEXT,
-            body: "Hello! I'm sorry to hear about the installation issue. Error code 500 typically indicates a server connection problem. Can you please tell me which version of the software you're trying to install?",
-            createdAt: new Date("2024-03-15T10:05:00Z"),
-            readAt: new Date("2024-03-15T10:06:00Z"),
+            body: "Of course! I'd be happy to help. What's your question about the order?",
+            createdAt: new Date("2024-03-15T10:01:00Z"),
+            readAt: new Date("2024-03-15T10:01:30Z"),
         },
     });
 
     // Customer's follow-up
-    const message3 = await prisma.message.create({
+    await prisma.message.create({
         data: {
-            conversationId: demoConversation.id,
+            conversationId: directConversation.id,
             senderId: customerUser.id,
             contentType: MessageContentType.TEXT,
-            body: "I'm trying to install version 3.2.1. I've tried the installation twice already with the same result.",
-            createdAt: new Date("2024-03-15T10:08:00Z"),
+            body: "I ordered a laptop last week but haven't received any shipping updates. The order status still shows 'Processing'.",
+            createdAt: new Date("2024-03-15T10:02:00Z"),
         },
     });
 
     // Agent's diagnostic response
-    const message4 = await prisma.message.create({
-        data: {
-            conversationId: demoConversation.id,
-            senderId: agentUser.id,
-            contentType: MessageContentType.TEXT,
-            body: "Thank you for that information. Let me check our server status for v3.2.1. In the meantime, can you please try running the installer as administrator?",
-            createdAt: new Date("2024-03-15T10:12:00Z"),
-            readAt: new Date("2024-03-15T10:13:00Z"),
-        },
-    });
-
-    // Customer sends a screenshot
-    const message5 = await prisma.message.create({
-        data: {
-            conversationId: demoConversation.id,
-            senderId: customerUser.id,
-            contentType: MessageContentType.IMAGE,
-            body: "Here's a screenshot of the error I'm getting:",
-            fileUrl: "https://example.com/uploads/error-screenshot-500.png",
-            mimeType: "image/png",
-            createdAt: new Date("2024-03-15T10:20:00Z"),
-        },
-    });
-
-    // Create attachment for the image message
-    await prisma.attachment.create({
-        data: {
-            messageId: message5.id,
-            url: "https://example.com/uploads/error-screenshot-500.png",
-            mimeType: "image/png",
-            width: 1920,
-            height: 1080,
-            sizeBytes: 245760, // ~240KB
-        },
-    });
-
-    // Owner joins the conversation
-    const message6 = await prisma.message.create({
-        data: {
-            conversationId: demoConversation.id,
-            senderId: ownerUser.id,
-            contentType: MessageContentType.TEXT,
-            body: "Hi there, this is the business owner. I can see we're having some server issues today. We'll have this resolved within the hour and I'll personally follow up with you.",
-            createdAt: new Date("2024-03-15T11:30:00Z"),
-        },
-    });
-
-    // System message about resolution
-    const systemMessage = await prisma.message.create({
-        data: {
-            conversationId: demoConversation.id,
-            senderId: null, // System message
-            contentType: MessageContentType.TEXT,
-            body: "🔧 System Update: Server maintenance completed. Installation issues have been resolved.",
-            createdAt: new Date("2024-03-15T13:00:00Z"),
-        },
-    });
-
-    // Final resolution message from agent
-    const finalMessage = await prisma.message.create({
-        data: {
-            conversationId: demoConversation.id,
-            senderId: agentUser.id,
-            contentType: MessageContentType.TEXT,
-            body: "Hi! The server issues have been resolved. Please try the installation again now. If you encounter any further issues, don't hesitate to reach out.",
-            createdAt: new Date("2024-03-15T14:30:00Z"),
-        },
-    });
-
-    // Create an additional direct conversation for more variety
-    console.log("💬 Creating additional direct conversation...");
-    const directConversation = await prisma.conversation.create({
-        data: {
-            id: 2n,
-            businessId: business2.id,
-            type: ConversationType.DIRECT,
-            createdAt: new Date("2024-03-20T09:00:00Z"),
-            updatedAt: new Date("2024-03-20T09:15:00Z"),
-        },
-    });
-
-    // Add participants to direct conversation
-    await prisma.participant.create({
+    await prisma.message.create({
         data: {
             conversationId: directConversation.id,
-            userId: customerUser.id,
-            role: ParticipantRole.CUSTOMER,
-            joinedAt: new Date("2024-03-20T09:00:00Z"),
+            senderId: agentUser.id,
+            contentType: MessageContentType.TEXT,
+            body: "Let me check that for you right away. Can you provide your order number?",
+            createdAt: new Date("2024-03-15T10:03:00Z"),
+            readAt: new Date("2024-03-15T10:03:15Z"),
         },
     });
 
-    await prisma.participant.create({
-        data: {
-            conversationId: directConversation.id,
-            userId: agentUser.id,
-            role: ParticipantRole.AGENT,
-            joinedAt: new Date("2024-03-20T09:02:00Z"),
-        },
-    });
-
-    // Add a couple messages to the direct conversation
+    // Customer provides order number
     await prisma.message.create({
         data: {
             conversationId: directConversation.id,
             senderId: customerUser.id,
             contentType: MessageContentType.TEXT,
-            body: "Hi! I'm interested in your services. Do you offer monthly packages?",
-            createdAt: new Date("2024-03-20T09:00:00Z"),
+            body: "Sure! It's #ORD-2024-5678",
+            createdAt: new Date("2024-03-15T10:04:00Z"),
         },
     });
 
+    // Agent's resolution
     await prisma.message.create({
         data: {
             conversationId: directConversation.id,
             senderId: agentUser.id,
             contentType: MessageContentType.TEXT,
-            body: "Absolutely! We offer comprehensive packages starting from $299/month. Would you like me to send you more information?",
-            createdAt: new Date("2024-03-20T09:05:00Z"),
-            readAt: new Date("2024-03-20T09:06:00Z"),
+            body: "Found it! I see the issue - there was a delay from our supplier. Your laptop actually shipped yesterday and you should receive tracking info within the next hour. It should arrive by Friday.",
+            createdAt: new Date("2024-03-15T10:06:00Z"),
+            readAt: new Date("2024-03-15T10:06:30Z"),
         },
     });
 
-    // Create a community conversation
-    console.log("💬 Creating community conversation...");
-    const communityConversation = await prisma.conversation.create({
-        data: {
-            id: 3n,
-            businessId: business1.id,
-            type: ConversationType.COMMUNITY,
-            createdAt: new Date("2024-03-18T08:00:00Z"),
-            updatedAt: new Date("2024-03-18T12:00:00Z"),
-        },
-    });
-
-    // Add all users to community conversation
-    await prisma.participant.create({
-        data: {
-            conversationId: communityConversation.id,
-            userId: customerUser.id,
-            role: ParticipantRole.CUSTOMER,
-            joinedAt: new Date("2024-03-18T08:00:00Z"),
-        },
-    });
-
-    await prisma.participant.create({
-        data: {
-            conversationId: communityConversation.id,
-            userId: agentUser.id,
-            role: ParticipantRole.AGENT,
-            joinedAt: new Date("2024-03-18T08:30:00Z"),
-        },
-    });
-
-    await prisma.participant.create({
-        data: {
-            conversationId: communityConversation.id,
-            userId: ownerUser.id,
-            role: ParticipantRole.OWNER,
-            joinedAt: new Date("2024-03-18T09:00:00Z"),
-        },
-    });
-
-    // Add community messages
+    // Customer's appreciation
     await prisma.message.create({
         data: {
-            conversationId: communityConversation.id,
+            conversationId: directConversation.id,
             senderId: customerUser.id,
             contentType: MessageContentType.TEXT,
-            body: "Welcome to the community! Looking forward to connecting with everyone here.",
-            createdAt: new Date("2024-03-18T08:00:00Z"),
+            body: "That's great news! Thanks for checking on that so quickly. Really appreciate the personal attention.",
+            createdAt: new Date("2024-03-15T10:07:00Z"),
         },
     });
 
+    // Agent's final message
     await prisma.message.create({
         data: {
-            conversationId: communityConversation.id,
+            conversationId: directConversation.id,
             senderId: agentUser.id,
             contentType: MessageContentType.TEXT,
-            body: "Thanks for joining! Feel free to ask questions or share feedback anytime.",
-            createdAt: new Date("2024-03-18T08:30:00Z"),
-        },
-    });
-
-    // Add a file message example
-    await prisma.message.create({
-        data: {
-            conversationId: communityConversation.id,
-            senderId: ownerUser.id,
-            contentType: MessageContentType.FILE,
-            body: "Here's our latest product roadmap document:",
-            fileUrl: "https://example.com/uploads/roadmap-2024.pdf",
-            mimeType: "application/pdf",
-            createdAt: new Date("2024-03-18T10:00:00Z"),
+            body: "You're very welcome! Feel free to reach out directly if you have any other questions. Enjoy your new laptop! 💻",
+            createdAt: new Date("2024-03-15T10:08:00Z"),
         },
     });
 
     console.log("✅ Seeding completed successfully!");
     console.log("\n📊 Created:");
     console.log(`   • 2 Businesses (ID: 1, 2)`);
-    console.log(`   • 3 Users (ID: 1=Customer, 2=Agent, 3=Owner)`);
-    console.log(`   • 3 Conversations (Support Room, Direct, Community)`);
-    console.log(`   • 12 Messages with realistic conversation flows`);
-    console.log(`   • 1 Image attachment`);
-    console.log("\n💬 Conversation Types:");
-    console.log(`   • Support Room: Business 1 - Customer support scenario`);
-    console.log(`   • Direct: Business 2 - Sales inquiry`);
-    console.log(`   • Community: Business 1 - Community discussion`);
+    console.log(`   • 2 Users (ID: 1=Agent, 2=Customer)`);
+    console.log(`   • 1 DIRECT Conversation`);
+    console.log(`   • 8 Messages with realistic direct chat flow`);
+    console.log("\n💬 Conversation Type:");
+    console.log(`   • Direct: Business 1 - Personal customer service chat`);
 }
 
 main()

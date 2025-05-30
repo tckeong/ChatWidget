@@ -6,20 +6,43 @@ async function loginPlugin(
     opts: FastifyPluginOptions
 ) {
     fastify.post("/login", async (request, reply) => {
-        const { username } = request.body as {
-            username: string;
+        const userData = request.body as {
+            id: string;
+            name: string;
         };
 
-        if (!username) {
+        if (!userData) {
             return reply.status(400).send({
-                message: "Username is required.",
+                message: "User ID and Name is required.",
                 status: "error",
             });
         }
 
+        const user = await fastify.prisma.user.findUnique({
+            where: {
+                id: BigInt(userData.id),
+            },
+            select: {
+                id: true,
+            },
+        });
+
+        if (!user) {
+            return reply.status(404).send({
+                message: "User not found.",
+                status: "error",
+            });
+        }
+
+        const jwt = fastify.jwt.sign({
+            id: user.id.toString(),
+            name: userData.name,
+        });
+
         return reply.status(200).send({
-            message: "Login endpoint is not implemented yet.",
+            message: "Login successful",
             status: "success",
+            jwt: jwt,
         });
     });
 }
