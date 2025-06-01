@@ -28,7 +28,6 @@ async function chatPlugin(
     const webSocketService = new WebSocketService(connectedClients, fastify);
     const conversationService = new ConversationService(fastify.prisma);
 
-    // CORS preflight setup
     fastify.options("/*", async (request, reply) => {
         reply.header(
             "Access-Control-Allow-Origin",
@@ -40,15 +39,6 @@ async function chatPlugin(
             "Content-Type, Authorization"
         );
         return reply.send();
-    });
-
-    // Apply CORS to all routes
-    fastify.addHook("onSend", (request, reply, payload, done) => {
-        reply.header(
-            "Access-Control-Allow-Origin",
-            process.env.CORS_ORIGIN || "*"
-        );
-        done();
     });
 
     fastify.redis["subscriber"].subscribe("chat-channel", (err) => {
@@ -79,6 +69,7 @@ async function chatPlugin(
         }
     );
 
+    // Broadcasts a message to all connected clients in a specific conversation through WebSocket
     function broadcastToConversation(conversationId: string, data: any) {
         connectedClients.forEach((client, clientId) => {
             if (
@@ -99,6 +90,7 @@ async function chatPlugin(
         });
     }
 
+    // Endpoint to create new messages for a conversation
     fastify.post("/messages", {
         preHandler: [fastify.rateLimit(), fastify.authenticate],
         handler: async (
@@ -162,6 +154,7 @@ async function chatPlugin(
         },
     });
 
+    // Endpoint to retrieve conversations and messages for a user
     fastify.get("/conversations/:userId/:businessId", {
         preHandler: [fastify.authenticate],
         handler: async (
@@ -206,6 +199,7 @@ async function chatPlugin(
         },
     });
 
+    // WebSocket endpoint for real-time chat functionality
     fastify.get<{ Querystring: Querystring }>(
         "/ws",
         {

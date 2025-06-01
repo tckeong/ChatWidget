@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import LoginWidget from "./widgets/Login";
 import ChatPage from "./pages/Chat";
 
+// use the react-router to manage the routes of the application
 const router = createBrowserRouter([
   {
     path: "/",

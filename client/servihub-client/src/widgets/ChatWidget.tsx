@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Check, CheckCheck } from 'lucide-react';
-import FilePickerWidget from './FilePickeWIdget';
+import FilePickerWidget from './FilePickeWidget';
 import Cookies from 'js-cookie';
 
 type ParticipantStatus = 'online' | 'offline' | 'typing';
@@ -67,6 +67,7 @@ const ChatWidget = () => {
     const wsRef = useRef<WebSocket | null>(null);
 
     useEffect(() => {
+        // fetch initial conversation and user data
         fetch(`${import.meta.env.VITE_API_URL}/conversations/${userId}/${businessId}`, {
             method: 'GET',
             headers: {
@@ -108,6 +109,7 @@ const ChatWidget = () => {
             let myRole: 'CUSTOMER' | 'AGENT' | null = null;
             let customerId: number | null = null;
 
+            // check if the current user is customer or agent
             for (const participant of data.conversations[0].participants) {
                 if (participant.userId === userId) {
                     myRole = participant.role;
@@ -119,6 +121,7 @@ const ChatWidget = () => {
                 }
             }
 
+            // if my role is customer, fetch business data
             if (myRole === 'CUSTOMER') {
                 fetch(`${import.meta.env.VITE_API_URL}/business/${businessId}`)
                     .then((response) => {
@@ -167,6 +170,9 @@ const ChatWidget = () => {
         const token = Cookies.get('token');
         wsRef.current = new WebSocket(`${import.meta.env.VITE_WS_URL}?token=${token}&conversationId=${conversationId?.toString() || ''}`);
 
+        // when the WebSocket connection is opened, send the online message
+        // let the participant know that the user is online
+        // and update the participant's name and status
         wsRef.current.onopen = async () => {
             await fetch(`${import.meta.env.VITE_API_URL}/user/${userId}`)
                 .then((response) => {
@@ -195,6 +201,8 @@ const ChatWidget = () => {
             console.log('WebSocket message received:', messageData);
 
             switch (messageData.type) {
+                // when receiving an online message, update the participant's name and status
+                // if the role is customer, update the agent name, to ensure which agent is online
                 case 'online':
                     setAgentName(messageData.payload.name || '');
                     setParticipant((prev) => {
@@ -238,6 +246,7 @@ const ChatWidget = () => {
 
                     break;
 
+                // after the participant send the message, update the messages
                 case 'send_message':
                     if (messageData.payload.senderId === participant?.id.toString()) {
                         setParticipant((prev) => {
@@ -324,7 +333,6 @@ const ChatWidget = () => {
     const handleMessageSend = async () => {
         if (messageInput.trim() === '') return;
 
-        // Simulate sending a message
         const newMessage: Message = {
             conversationId: BigInt(1),
             senderId: BigInt(1),
@@ -346,6 +354,7 @@ const ChatWidget = () => {
             }
         } as WebSocketMessage));
 
+        // Send the message to the server through the API
         await fetch(`${import.meta.env.VITE_API_URL}/messages`, {
             method: 'POST',
             headers: {
@@ -364,6 +373,7 @@ const ChatWidget = () => {
             })
         });
 
+        // Fetch the updated messages after sending
         fetch(`${import.meta.env.VITE_API_URL}/conversations/1/1`, {
             method: 'GET',
             headers: {

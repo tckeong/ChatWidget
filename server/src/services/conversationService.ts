@@ -306,7 +306,7 @@ export class ConversationService {
                 where: {
                     id: { in: messageIds },
                     conversationId,
-                    senderId: { not: userId }, // Don't mark own messages as read
+                    senderId: { not: userId },
                     readAt: null,
                     deletedAt: null,
                 },

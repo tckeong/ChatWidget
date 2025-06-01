@@ -32,6 +32,7 @@ const isImageFile = (file: File): boolean => {
     return file.type.startsWith('image/');
 };
 
+// Converts a File object to an Attachment object
 const convertFileToAttachment = async (file: File): Promise<Attachment> => {
     const attachment: Attachment = {
         url: URL.createObjectURL(file),

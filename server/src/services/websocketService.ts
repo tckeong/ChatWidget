@@ -23,6 +23,7 @@ export class WebSocketService {
         private readonly fastify: FastifyInstance
     ) {}
 
+    // Broadcasts a message to all clients in a specific conversation through WebSocket connections.
     broadcastToConversation(
         conversationId: string,
         data: any,
@@ -48,6 +49,8 @@ export class WebSocketService {
         });
     }
 
+    // Handles a new WebSocket connection from a client.
+    // Broadcasts an "online" message to the conversation.
     async handleOnline(clientId: string, conversationId: string, name: string) {
         const client = this.connectedClients.get(clientId);
         if (!client) return;
@@ -67,6 +70,9 @@ export class WebSocketService {
         );
     }
 
+    // Handles a client going offline.
+    // Broadcasts a "left" message to the conversation and closes the WebSocket connection.
+    // Delete the client from the connected clients map.
     async handleOffline(clientId: string) {
         const client = this.connectedClients.get(clientId);
         if (!client || !client.conversationId) return;
@@ -88,6 +94,7 @@ export class WebSocketService {
         this.connectedClients.delete(clientId);
     }
 
+    // Handles a typing event from a client.
     async handleTyping(clientId: string, conversationId: string) {
         const client = this.connectedClients.get(clientId);
         if (!client || !client.conversationId) return;
@@ -105,6 +112,7 @@ export class WebSocketService {
         );
     }
 
+    // Handles a message sent by a client.
     async handleSendMessage(clientId: string, conversationId: string) {
         const client = this.connectedClients.get(clientId);
         if (!client || !client.conversationId) return;
@@ -121,6 +129,7 @@ export class WebSocketService {
         );
     }
 
+    // Handles a read event for messages in a conversation.
     async handleIsRead(
         clientId: string,
         conversationId: string,

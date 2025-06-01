@@ -5,6 +5,7 @@ async function loginPlugin(
     fastify: FastifyInstance,
     opts: FastifyPluginOptions
 ) {
+    // Mock endpoint for user login
     fastify.post("/login", async (request, reply) => {
         const userData = request.body as {
             id: string;
@@ -44,6 +45,7 @@ async function loginPlugin(
         });
     });
 
+    // Mock endpoint for fetch user name
     fastify.get("/user/:userId", async (request, reply) => {
         const { userId } = request.params as { userId: string };
         if (!userId) {
@@ -64,6 +66,7 @@ async function loginPlugin(
         });
     });
 
+    // Mock endpoint for fetch business name
     fastify.get("/business/:businessId", async (request, reply) => {
         const { businessId } = request.params as { businessId: string };
 

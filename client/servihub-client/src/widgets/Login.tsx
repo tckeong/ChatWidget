@@ -7,6 +7,7 @@ const LoginWidget = () => {
     const navigate = useNavigate();
 
     useEffect(() => {
+        // mock login
         fetch(`${import.meta.env.VITE_API_URL}/login`, {
             method: 'POST',
             headers: {
