@@ -2,63 +2,6 @@
 
 This repository contains a full-stack implementation of a real-time customer-to-business chat service, developed as a technical assessment. It includes a Fastify (Node.js/TypeScript) backend and a React (TypeScript/Tailwind CSS) chat widget frontend.
 
-## 📂 Project Structure
-
-.
-├── client
-│   └── servihub-client
-│   ├── Dockerfile
-│   ├── eslint.config.js
-│   ├── index.html
-│   ├── package-lock.json
-│   ├── package.json
-│   ├── README.md
-│   ├── src
-│   │   ├── App.tsx
-│   │   ├── index.css
-│   │   ├── main.tsx
-│   │   ├── pages
-│   │   │   ├── Chat.tsx
-│   │   │   └── Index.tsx
-│   │   ├── vite-env.d.ts
-│   │   └── widgets
-│   │   ├── ChatWidget.tsx
-│   │   ├── FilePickeWidget.tsx
-│   │   └── Login.tsx
-│   ├── tsconfig.app.json
-│   ├── tsconfig.json
-│   ├── tsconfig.node.json
-│   └── vite.config.ts
-├── docker-compose.yaml
-├── README.md
-├── Retrospective.md
-└── server
-├── Dockerfile
-├── package-lock.json
-├── package.json
-├── prisma
-│   ├── schema.prisma
-│   └── seed.ts
-├── README.md
-├── src
-│   ├── app.ts
-│   ├── plugins
-│   │   ├── chat.ts
-│   │   ├── jwtValidate.ts
-│   │   ├── login.ts
-│   │   └── README.md
-│   ├── services
-│   │   ├── conversationService.ts
-│   │   └── websocketService.ts
-│   └── test
-│   ├── helper.ts
-│   └── plugins
-│   ├── chat.test.ts
-│   └── login.test.ts
-└── tsconfig.json
-
-13 directories, 40 files
-
 ## 🚀 Local Development Setup
 
 To get the entire application running on your local machine using Docker Compose:
