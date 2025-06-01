@@ -1,6 +1,5 @@
 import { FastifyInstance } from "fastify";
 import { User } from "../app";
-import { MessageContentType } from "@prisma/client";
 
 export interface ConnectedClient {
     socket: WebSocket;
@@ -11,10 +10,10 @@ export interface ConnectedClient {
 export interface WebSocketMessage {
     type: "online" | "offline" | "is_typing" | "send_message" | "is_read";
     payload: {
+        name?: string;
         conversationId?: string;
         senderId?: string;
         messageIds?: string[];
-        token?: string;
     };
 }
 
@@ -24,11 +23,16 @@ export class WebSocketService {
         private readonly fastify: FastifyInstance
     ) {}
 
-    broadcastToConversation(conversationId: string, data: any) {
+    broadcastToConversation(
+        conversationId: string,
+        data: any,
+        senderId: string
+    ) {
         this.connectedClients.forEach((client, clientId) => {
             if (
                 client.conversationId === conversationId &&
-                client.socket.readyState === 1
+                client.socket.readyState === 1 &&
+                client.user.id !== senderId
             ) {
                 try {
                     client.socket.send(JSON.stringify(data));
@@ -44,18 +48,23 @@ export class WebSocketService {
         });
     }
 
-    async handleOnline(clientId: string, conversationId: string) {
+    async handleOnline(clientId: string, conversationId: string, name: string) {
         const client = this.connectedClients.get(clientId);
         if (!client) return;
 
         client.conversationId = conversationId;
 
-        this.broadcastToConversation(conversationId, {
-            type: "online",
-            payload: {
-                user: client.user,
+        this.broadcastToConversation(
+            conversationId,
+            {
+                type: "online",
+                payload: {
+                    user: client.user,
+                    name: name,
+                },
             },
-        });
+            clientId
+        );
     }
 
     async handleOffline(clientId: string) {
@@ -64,12 +73,16 @@ export class WebSocketService {
 
         const conversationId = client.conversationId;
 
-        this.broadcastToConversation(conversationId, {
-            type: "left",
-            payload: {
-                user: client.user,
+        this.broadcastToConversation(
+            conversationId,
+            {
+                type: "left",
+                payload: {
+                    user: client.user,
+                },
             },
-        });
+            clientId
+        );
 
         client.socket.close();
         this.connectedClients.delete(clientId);
@@ -79,25 +92,33 @@ export class WebSocketService {
         const client = this.connectedClients.get(clientId);
         if (!client || !client.conversationId) return;
 
-        this.broadcastToConversation(conversationId, {
-            type: "typing",
-            payload: {
-                conversationId,
-                user: client.user,
+        this.broadcastToConversation(
+            conversationId,
+            {
+                type: "typing",
+                payload: {
+                    conversationId,
+                    user: client.user,
+                },
             },
-        });
+            clientId
+        );
     }
 
     async handleSendMessage(clientId: string, conversationId: string) {
         const client = this.connectedClients.get(clientId);
         if (!client || !client.conversationId) return;
 
-        this.broadcastToConversation(conversationId, {
-            type: "sent",
-            payload: {
-                user: client.user,
+        this.broadcastToConversation(
+            conversationId,
+            {
+                type: "sent",
+                payload: {
+                    user: client.user,
+                },
             },
-        });
+            clientId
+        );
     }
 
     async handleIsRead(
@@ -108,12 +129,16 @@ export class WebSocketService {
         const client = this.connectedClients.get(clientId);
         if (!client || !client.conversationId) return;
 
-        this.broadcastToConversation(conversationId, {
-            type: "read",
-            payload: {
-                user: client.user,
-                messageIds: messageId,
+        this.broadcastToConversation(
+            conversationId,
+            {
+                type: "read",
+                payload: {
+                    user: client.user,
+                    messageIds: messageId,
+                },
             },
-        });
+            clientId
+        );
     }
 }

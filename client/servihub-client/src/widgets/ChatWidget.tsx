@@ -1,18 +1,18 @@
 import { useEffect, useState, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import { Check, CheckCheck } from 'lucide-react';
 import FilePickerWidget from './FilePickeWIdget';
 import Cookies from 'js-cookie';
 
-type RoleType = 'customer' | 'agent';
+type ParticipantStatus = 'online' | 'offline' | 'typing';
 
 interface Participant {
     id: number;
-    role: RoleType;
     name: string;
-    lastMessage: string;
-    time: string;
+    lastMessage?: string;
+    time?: string;
     unread?: number;
-    online?: boolean;
+    status: ParticipantStatus;
 }
 
 type MessageContentType = 'TEXT' | 'IMAGE' | 'VIDEO' | 'FILE' | 'OTHERS';
@@ -46,6 +46,7 @@ interface WebSocketMessage {
     | "send_message"
     | "is_read";
     payload: {
+        name?: string;
         conversationId?: string;
         senderId?: string;
         messageIds?: string[];
@@ -54,15 +55,19 @@ interface WebSocketMessage {
 }
 
 const ChatWidget = () => {
+    const { userId, businessId } = useParams<{ userId: string; businessId: string }>();
     const [participant, setParticipant] = useState<Participant | null>(null);
+    const [agentName, setAgentName] = useState<string>('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [messageInput, setMessageInput] = useState('');
     const [user, setUser] = useState<{ id: number; name: string } | null>(null);
     const [conversationId, setConversationId] = useState<BigInt | null>(null);
+    const [attachment, setAttachment] = useState<attachment[]>([]);
+    const roleRef = useRef<'CUSTOMER' | 'AGENT' | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
 
     useEffect(() => {
-        fetch(`${import.meta.env.VITE_API_URL}/conversations/1/1`, {
+        fetch(`${import.meta.env.VITE_API_URL}/conversations/${userId}/${businessId}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -74,7 +79,21 @@ const ChatWidget = () => {
             }
             return response.json();
         }).then((data) => {
-            setUser(data.user);
+            fetch(`${import.meta.env.VITE_API_URL}/user/${userId}`)
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                }).then((data) => {
+                    setUser({
+                        id: userId ? Number(userId) : 0,
+                        name: data.name
+                    });
+                }).catch((error) => {
+                    console.error('Error fetching user data:', error);
+                });
+
             setMessages(data.messages.messages.map((msg: any) => {
                 return {
                     ...msg,
@@ -85,6 +104,55 @@ const ChatWidget = () => {
                     readAt: msg.readAt ? new Date(msg.readAt) : undefined
                 } as Message;
             }));
+
+            let myRole: 'CUSTOMER' | 'AGENT' | null = null;
+            let customerId: number | null = null;
+
+            for (const participant of data.conversations[0].participants) {
+                if (participant.userId === userId) {
+                    myRole = participant.role;
+                    roleRef.current = myRole;
+                }
+
+                if (participant.role === 'CUSTOMER') {
+                    customerId = participant.userId;
+                }
+            }
+
+            if (myRole === 'CUSTOMER') {
+                fetch(`${import.meta.env.VITE_API_URL}/business/${businessId}`)
+                    .then((response) => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    }).then((data) => {
+                        setParticipant({
+                            id: data.id,
+                            name: data.name,
+                            status: "offline" as ParticipantStatus,
+                        });
+                    }).catch((error) => {
+                        console.error('Error fetching business data:', error);
+                    });
+            } else {
+                fetch(`${import.meta.env.VITE_API_URL}/user/${customerId}`)
+                    .then((response) => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    }).then((data) => {
+                        setParticipant({
+                            id: data.id,
+                            name: data.name,
+                            status: "offline" as ParticipantStatus,
+                        });
+                    }).catch((error) => {
+                        console.error('Error fetching user data:', error);
+                    });
+            }
+
             setConversationId(BigInt(data.conversations[0].id));
         }).catch((error) => {
             console.error('Error fetching user data:', error);
@@ -99,75 +167,143 @@ const ChatWidget = () => {
         const token = Cookies.get('token');
         wsRef.current = new WebSocket(`${import.meta.env.VITE_WS_URL}?token=${token}&conversationId=${conversationId?.toString() || ''}`);
 
-        wsRef.current.onopen = () => {
-            wsRef.current?.send(JSON.stringify({
-                type: 'online',
-                payload: {
-                    conversationId: conversationId?.toString() || '',
-                    senderId: user?.id.toString() || '',
-                }
-            } as WebSocketMessage));
-
-            let isReadyMessages = [];
-
-            for (let i = 0; i < messages.length; i++) {
-                if (!messages[i].readAt) {
-                    messages[i].readAt = new Date();
-                    isReadyMessages.push(messages[i].id?.toString() || '');
-                }
-            }
-
-            if (isReadyMessages.length > 0) {
-                wsRef.current?.send(JSON.stringify({
-                    type: 'is_read',
-                    payload: {
-                        conversationId: conversationId?.toString() || '',
-                        senderId: user?.id.toString() || '',
-                        messageIds: isReadyMessages,
+        wsRef.current.onopen = async () => {
+            await fetch(`${import.meta.env.VITE_API_URL}/user/${userId}`)
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
                     }
-                } as WebSocketMessage));
-            }
+                    return response.json();
+                }).then((data) => {
+                    console.log('WebSocket connection opened:', data);
+                    wsRef.current?.send(JSON.stringify({
+                        type: 'online',
+                        payload: {
+                            name: data.name || '',
+                            conversationId: conversationId?.toString() || '',
+                            senderId: user?.id.toString() || '',
+                        }
+                    } as WebSocketMessage));
+                }).catch((error) => {
+                    console.error('Error fetching user data:', error);
+                });
         };
 
         wsRef.current.onmessage = (event) => {
-            const messageData = JSON.parse(event.data);
+            const messageData = JSON.parse(event.data) as WebSocketMessage;
+
             console.log('WebSocket message received:', messageData);
+
+            switch (messageData.type) {
+                case 'online':
+                    setAgentName(messageData.payload.name || '');
+                    setParticipant((prev) => {
+                        if (prev) {
+                            if (roleRef.current === 'CUSTOMER') {
+                                return {
+                                    ...prev,
+                                    id: messageData.payload.senderId ? Number(messageData.payload.senderId) : prev.id,
+                                    status: 'online' as ParticipantStatus
+                                };
+                            } else {
+                                return { ...prev, status: 'online' as ParticipantStatus };
+                            }
+                        }
+                        return prev;
+                    });
+
+                    break;
+
+                case 'offline':
+                    if (messageData.payload.senderId === participant?.id.toString()) {
+                        setParticipant((prev) => {
+                            if (prev) {
+                                return { ...prev, status: 'offline' as ParticipantStatus };
+                            }
+                            return prev;
+                        })
+                    }
+
+                    break;
+
+                case 'is_typing':
+                    if (messageData.payload.senderId === participant?.id.toString()) {
+                        setParticipant((prev) => {
+                            if (prev) {
+                                return { ...prev, status: 'typing' as ParticipantStatus };
+                            }
+                            return prev;
+                        });
+                    }
+
+                    break;
+
+                case 'send_message':
+                    if (messageData.payload.senderId === participant?.id.toString()) {
+                        setParticipant((prev) => {
+                            if (prev) {
+                                return { ...prev, status: 'online' as ParticipantStatus };
+                            }
+                            return prev;
+                        })
+
+                        fetch(`${import.meta.env.VITE_API_URL}/conversations/1/1`, {
+                            method: 'GET',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${Cookies.get('token')}`
+                            }
+                        }).then((response) => {
+                            if (!response.ok) {
+                                throw new Error('Network response was not ok');
+                            }
+                            return response.json();
+                        }).then((data) => {
+                            setMessages(data.messages.messages.map((msg: any) => {
+                                return {
+                                    ...msg,
+                                    id: BigInt(msg.id),
+                                    conversationId: BigInt(msg.conversationId),
+                                    senderId: BigInt(msg.senderId),
+                                    createdAt: new Date(msg.createdAt),
+                                    readAt: msg.readAt ? new Date(msg.readAt) : undefined
+                                } as Message;
+                            }));
+                            setConversationId(BigInt(data.conversations[0].id));
+                        }).catch((error) => {
+                            console.error('Error fetching user data:', error);
+                        });
+                    }
+                    break;
+            }
         };
+
 
         wsRef.current.onerror = (error) => {
             console.error('WebSocket error:', error);
         };
 
         wsRef.current.onclose = (event) => {
-            wsRef.current?.send(JSON.stringify({
-                type: 'offline',
-                payload: {
-                    conversationId: conversationId?.toString() || '',
-                    senderId: user?.id.toString() || '',
-                }
-            } as WebSocketMessage));
+            wsRef.current = null;
             console.log('WebSocket connection closed:', event);
         };
 
         return () => {
-            wsRef.current?.close();
-            wsRef.current = null;
+            if (wsRef.current) {
+                if (wsRef.current.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(JSON.stringify({
+                        type: 'offline',
+                        payload: {
+                            conversationId: conversationId?.toString() || '',
+                            senderId: user?.id.toString() || '',
+                        }
+                    } as WebSocketMessage));
+                }
+                wsRef.current.close();
+                wsRef.current = null;
+            }
         };
-    }, [conversationId]);
-
-    useEffect(() => {
-        const participant = {
-            id: 1,
-            role: 'customer' as RoleType,
-            name: 'John Doe',
-            lastMessage: 'Are we still meeting tomorrow at 3 PM?',
-            time: '2:45 PM',
-            unread: 2,
-            online: true,
-        };
-
-        setParticipant(participant); // Set default selected friend
-    }, []);
+    }, [userId, conversationId]);
 
     const ReadTicks = ({ read }: { read: boolean }) => {
         return (
@@ -185,7 +321,7 @@ const ChatWidget = () => {
         );
     };
 
-    const handleMessageSend = () => {
+    const handleMessageSend = async () => {
         if (messageInput.trim() === '') return;
 
         // Simulate sending a message
@@ -194,21 +330,66 @@ const ChatWidget = () => {
             senderId: BigInt(1),
             body: messageInput,
             contentType: "TEXT",
-            attachments: []
+            attachments: attachment,
+            createdAt: new Date(),
         };
-
-        setMessages([...messages, newMessage]);
         setMessageInput('');
 
         wsRef.current?.send(JSON.stringify({
             type: 'send_message',
             payload: {
-                conversationId: conversationId?.toString() || '',
+                conversationId: conversationId?.
+                    toString() || '',
                 senderId: user?.id.toString() || '',
                 messageIds: [newMessage.id?.toString() || ''],
                 token: Cookies.get('token') || ''
             }
         } as WebSocketMessage));
+
+        await fetch(`${import.meta.env.VITE_API_URL}/messages`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${Cookies.get('token')}`
+
+            },
+            body: JSON.stringify(newMessage, (_, value) => {
+                if (value instanceof Date) {
+                    return value.toISOString();
+                }
+                if (typeof value === 'bigint') {
+                    return value.toString(); // Convert BigInt to string for JSON serialization
+                }
+                return value;
+            })
+        });
+
+        fetch(`${import.meta.env.VITE_API_URL}/conversations/1/1`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${Cookies.get('token')}`
+            }
+        }).then((response) => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        }).then((data) => {
+            setMessages(data.messages.messages.map((msg: any) => {
+                return {
+                    ...msg,
+                    id: BigInt(msg.id),
+                    conversationId: BigInt(msg.conversationId),
+                    senderId: BigInt(msg.senderId),
+                    createdAt: new Date(msg.createdAt),
+                    readAt: msg.readAt ? new Date(msg.readAt) : undefined
+                } as Message;
+            }));
+            setConversationId(BigInt(data.conversations[0].id));
+        }).catch((error) => {
+            console.error('Error fetching user data:', error);
+        });
     };
 
     const handleTyping = () => {
@@ -221,6 +402,17 @@ const ChatWidget = () => {
         } as WebSocketMessage));
     };
 
+    const statusToText = (status: ParticipantStatus) => {
+        switch (status) {
+            case 'online':
+                return 'Online';
+            case 'offline':
+                return 'Offline';
+            case 'typing':
+                return 'Typing...';
+        }
+    }
+
     return (
         <div className="flex h-screen bg-gray-100">
             <div className="flex-1 flex flex-col">
@@ -230,19 +422,19 @@ const ChatWidget = () => {
                         <div className="flex items-center">
                             <div className="ml-5 relative">
                                 <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
-                                    {(user?.name || "John").charAt(0).toUpperCase()}
+                                    {(participant?.name || "").charAt(0).toUpperCase()}
                                 </div>
-                                {participant?.online
+                                {participant?.status === "online"
                                     ? (<div className="absolute bottom-0 -right-1 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></div>)
                                     : (<div className="absolute bottom-0 -right-1 w-3 h-3 bg-red-400 border-2 border-white rounded-full"></div>)
                                 }
                             </div>
                             <div className="ml-3">
                                 <h2 className="text-lg font-semibold text-gray-900">
-                                    {user?.name}
+                                    {participant?.name}
                                 </h2>
                                 <p className="text-sm text-gray-500">
-                                    {participant?.online ? 'online' : 'offline'}
+                                    {statusToText(participant?.status || 'offline')}
                                 </p>
                             </div>
                         </div>
@@ -257,7 +449,9 @@ const ChatWidget = () => {
                             >
                                 {
                                     message.senderId !== BigInt(user?.id || -1) && (
-                                        <p className='ml-5 text-gray-500 text-base'>{participant?.name}</p>
+                                        <p className='ml-5 text-gray-500 text-base'>
+                                            {roleRef.current == "CUSTOMER" ? `${participant?.name} - ${agentName} (Agent)` : participant?.name}
+                                        </p>
                                     )}
                                 <div
                                     className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${message.senderId === BigInt(user?.id || -1)
@@ -283,7 +477,7 @@ const ChatWidget = () => {
                     </div>
 
                     {/* Message Input */}
-                    <FilePickerWidget messageInput={messageInput} setMessageInput={setMessageInput} handleTyping={handleTyping} handleMessageSend={handleMessageSend} />
+                    <FilePickerWidget onFilesSelected={setAttachment} messageInput={messageInput} setMessageInput={setMessageInput} handleTyping={handleTyping} handleMessageSend={handleMessageSend} />
                 </>
             </div>
         </div>

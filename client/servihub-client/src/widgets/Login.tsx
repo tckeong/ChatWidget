@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import Cookies from 'js-cookie';
 
 const LoginWidget = () => {
-    const { userId, username, businessId } = useParams();
+    const { userId, businessId } = useParams();
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -14,7 +14,6 @@ const LoginWidget = () => {
             },
             body: JSON.stringify({
                 id: userId,
-                name: username,
             }),
         }).then((response) => {
             if (!response.ok) {
@@ -24,7 +23,7 @@ const LoginWidget = () => {
             return response.json();
         }).then((data) => {
             Cookies.set('token', data.jwt, { expires: 7 });
-            navigate(`/chat/${businessId}`);
+            navigate(`/chat/${userId}/${businessId}`);
         });
     }, []);
 

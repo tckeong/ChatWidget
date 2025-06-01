@@ -13,11 +13,11 @@ const router = createBrowserRouter([
     element: <Index />,
   },
   {
-    path: "/login/:userId/:username/:businessId",
+    path: "/login/:userId/:businessId",
     element: <LoginWidget />,
   },
   {
-    path: "/chat/:businessId/",
+    path: "/chat/:userId/:businessId/",
     element: <ChatPage />,
   },
   {

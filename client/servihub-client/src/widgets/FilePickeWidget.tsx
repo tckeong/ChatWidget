@@ -101,7 +101,7 @@ const validateFileSize = (file: File, maxSizeBytes: number): boolean => {
 };
 
 interface FilePickerWidgetProps {
-    onFilesSelected?: (attachments: Attachment[]) => void;
+    onFilesSelected: (attachments: Attachment[]) => void;
     maxFileSize?: number;
     messageInput: string;
     setMessageInput: (value: string) => void;
@@ -119,7 +119,6 @@ export const FilePickerWidget: React.FC<FilePickerWidgetProps> = ({
 }) => {
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const [selectedFiles, setSelectedFiles] = useState<FileObject[]>([]);
-
 
     const triggerFileInput = (accept: string = "*/*"): void => {
         if (fileInputRef.current) {
@@ -249,6 +248,12 @@ export const FilePickerWidget: React.FC<FilePickerWidgetProps> = ({
                         onFocus={handleTyping}
                         placeholder="Write a message..."
                         className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleMessageSend ? handleMessageSend() : null;
+                            }
+                        }}
                     />
                 </div>
 

@@ -6,7 +6,6 @@ import {
     FastifyReply,
 } from "fastify";
 import { User } from "../app";
-import fastifyJwt from "@fastify/jwt";
 
 declare module "fastify" {
     interface FastifyInstance {

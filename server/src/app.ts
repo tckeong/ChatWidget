@@ -16,7 +16,6 @@ const options = {};
 
 export interface User {
     id: string;
-    name: string;
 }
 
 declare module "@fastify/jwt" {
@@ -66,12 +65,6 @@ module.exports = async function (
     fastify.register(loginPlugin);
     fastify.register(jwtValidate);
     fastify.register(chatPlugin, { prefix: "/chat" });
-
-    fastify.ready((err) => {
-        if (err) throw err;
-        console.log(fastify.printRoutes());
-        console.log(fastify.printPlugins());
-    });
 };
 
 module.exports.options = options;

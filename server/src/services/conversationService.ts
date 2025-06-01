@@ -53,8 +53,8 @@ export class ConversationService {
                 },
                 include: {
                     participants: {
-                        where: { userId },
                         select: {
+                            userId: true,
                             role: true,
                         },
                     },

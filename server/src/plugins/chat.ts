@@ -17,6 +17,7 @@ declare module "fastify" {
 
 interface Querystring {
     token?: string;
+    conversationId?: string;
 }
 
 async function chatPlugin(
@@ -212,23 +213,23 @@ async function chatPlugin(
         },
         (socket, request) => {
             const user = fastify.jwt.decode(request.query.token || "") as User;
-            const clientId = `${user.id}_${Date.now()}_${Math.random()}`;
+            const clientId = `${user.id}_${Date.now()}_${Math.round(
+                Math.random() * 1000
+            )}`;
 
-            // Store the connection
             connectedClients.set(clientId, {
                 socket: socket,
                 user: user,
+                conversationId: request.query.conversationId,
             });
 
-            fastify.log.info(
-                `WebSocket client connected: ${user.name} (${clientId})`
-            );
+            fastify.log.info(`WebSocket client connected: (${clientId})`);
 
             socket.send(
                 JSON.stringify({
-                    type: "connection_established",
+                    type: "established",
                     payload: {
-                        message: `Hello, ${user.name}! WebSocket connection established.`,
+                        message: `Hello, ${clientId}! WebSocket connection established.`,
                         clientId: clientId,
                     },
                 })
@@ -243,7 +244,8 @@ async function chatPlugin(
                         case "online":
                             await webSocketService.handleOnline(
                                 clientId,
-                                wsMessage.payload.conversationId!
+                                wsMessage.payload.conversationId!,
+                                wsMessage.payload.name!
                             );
                             break;
 
@@ -307,7 +309,7 @@ async function chatPlugin(
 
             socket.on("close", () => {
                 fastify.log.info(
-                    `WebSocket client disconnected: ${user.name} (${clientId})`
+                    `WebSocket client disconnected: (${clientId})`
                 );
                 connectedClients.delete(clientId);
             });

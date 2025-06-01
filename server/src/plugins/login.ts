@@ -8,12 +8,11 @@ async function loginPlugin(
     fastify.post("/login", async (request, reply) => {
         const userData = request.body as {
             id: string;
-            name: string;
         };
 
         if (!userData) {
             return reply.status(400).send({
-                message: "User ID and Name is required.",
+                message: "User ID is required.",
                 status: "error",
             });
         }
@@ -36,13 +35,54 @@ async function loginPlugin(
 
         const jwt = fastify.jwt.sign({
             id: user.id.toString(),
-            name: userData.name,
         });
 
         return reply.status(200).send({
             message: "Login successful",
             status: "success",
             jwt: jwt,
+        });
+    });
+
+    fastify.get("/user/:userId", async (request, reply) => {
+        const { userId } = request.params as { userId: string };
+        if (!userId) {
+            return reply.status(400).send({
+                message: "User ID is required.",
+                status: "error",
+            });
+        }
+
+        const userMap = {
+            "1": "Alice",
+            "2": "Bob",
+        };
+
+        return reply.status(200).send({
+            id: userId,
+            name: userMap[userId as keyof typeof userMap] || "Unknown User",
+        });
+    });
+
+    fastify.get("/business/:businessId", async (request, reply) => {
+        const { businessId } = request.params as { businessId: string };
+
+        if (!businessId) {
+            return reply.status(400).send({
+                message: "Business ID is required.",
+                status: "error",
+            });
+        }
+
+        const businessMap = {
+            "1": "Tech Solutions",
+        };
+
+        return reply.status(200).send({
+            id: businessId,
+            name:
+                businessMap[businessId as keyof typeof businessMap] ||
+                "Unknown Business",
         });
     });
 }
