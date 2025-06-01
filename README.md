@@ -2,7 +2,7 @@
 
 This repository contains a full-stack implementation of a real-time customer-to-business chat service, developed as a technical assessment. It includes a Fastify (Node.js/TypeScript) backend and a React (TypeScript/Tailwind CSS) chat widget frontend.
 
-## 🚀 Local Development Setup
+## Local Development Setup
 
 To get the entire application running on your local machine using Docker Compose:
 
